@@ -1,0 +1,37 @@
+# ── Secrets ──────────────────────────────────────────────────
+.env
+*.env.local
+
+# TLS certificates (dev certs stay local, never commit to git)
+nginx/certs/
+
+# ── Model weights ─────────────────────────────────────────────
+# ~130 MB of downloaded embedding model — re-downloaded on first run
+.model_cache/
+
+# ── Python ───────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.ruff_cache/
+
+# ── Test reports ─────────────────────────────────────────────
+reports/
+
+# ── IDE ───────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Logs ─────────────────────────────────────────────────────
+*.log
+
+# ── OS ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
