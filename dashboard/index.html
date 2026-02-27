@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DeepRouter — Agentic Gateway</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    body { background: #0f1117; color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif; }
+    .card  { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 12px; }
+    .card-glow { background: #1a1f2e; border: 1px solid #6366f1; border-radius: 12px; box-shadow: 0 0 24px rgba(99,102,241,0.15); }
+    .badge-ok      { background: #0d3321; color: #4ade80; border: 1px solid #16a34a; }
+    .badge-error   { background: #3b0f0f; color: #f87171; border: 1px solid #dc2626; }
+    .badge-unknown { background: #1e2535; color: #94a3b8; border: 1px solid #475569; }
+    .stat-value { font-size: 2rem; font-weight: 700; line-height: 1; }
+    .stat-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin-top: 4px; }
+    .intent-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+    .ticker-btn  { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 6px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all .15s; color: #94a3b8; }
+    .ticker-btn:hover { background: #334155; color: #e2e8f0; }
+    .ticker-btn.active { background: #312e81; border-color: #6366f1; color: #a5b4fc; }
+    input[type=text]:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,0.2); }
+    .result-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #1e293b; font-size: 0.85rem; }
+    .result-row:last-child { border-bottom: none; }
+    .result-label { color: #64748b; }
+    .result-value { font-weight: 600; font-family: monospace; }
+    .risk-bar-bg { background: #1e293b; border-radius: 4px; height: 8px; overflow: hidden; margin-top: 4px; }
+    .risk-bar    { height: 8px; border-radius: 4px; transition: width 0.6s ease; }
+    .pulse { animation: pulse 2s cubic-bezier(0.4,0,0.6,1) infinite; }
+    .spin  { animation: spin 1s linear infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+    @keyframes spin  { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #1a1f2e; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+  </style>
+</head>
+<body class="min-h-screen p-6">
+
+<!-- ======================== HEADER ======================== -->
+<div class="flex items-center justify-between mb-6">
+  <div class="flex items-center gap-3">
+    <div class="w-9 h-9 rounded-xl flex items-center justify-center" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">
+      <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+      </svg>
+    </div>
+    <div>
+      <h1 class="text-lg font-bold text-white">DeepRouter</h1>
+      <p class="text-xs text-slate-500">Agentic Gateway</p>
+    </div>
+  </div>
+  <div class="flex items-center gap-3">
+    <span id="last-updated" class="text-xs text-slate-500"></span>
+    <span id="live-badge" class="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full badge-unknown">
+      <span class="w-2 h-2 rounded-full bg-slate-400 pulse"></span> Connecting
+    </span>
+  </div>
+</div>
+
+<!-- ======================== SERVICE HEALTH ======================== -->
+<div class="grid grid-cols-4 gap-3 mb-6">
+  <div class="card p-4 flex items-center gap-3">
+    <div id="dot-redis" class="w-3 h-3 rounded-full bg-slate-600 flex-shrink-0"></div>
+    <div><p class="text-sm font-medium">Redis</p><p id="lbl-redis" class="text-xs text-slate-500">—</p></div>
+  </div>
+  <div class="card p-4 flex items-center gap-3">
+    <div id="dot-postgres" class="w-3 h-3 rounded-full bg-slate-600 flex-shrink-0"></div>
+    <div><p class="text-sm font-medium">Postgres</p><p id="lbl-postgres" class="text-xs text-slate-500">—</p></div>
+  </div>
+  <div class="card p-4 flex items-center gap-3">
+    <div id="dot-celery" class="w-3 h-3 rounded-full bg-slate-600 flex-shrink-0"></div>
+    <div><p class="text-sm font-medium">Celery</p><p id="lbl-celery" class="text-xs text-slate-500">—</p></div>
+  </div>
+  <div class="card p-4 flex items-center gap-3">
+    <div id="dot-gateway" class="w-3 h-3 rounded-full bg-slate-600 flex-shrink-0"></div>
+    <div><p class="text-sm font-medium">Gateway</p><p id="lbl-gateway" class="text-xs text-slate-500">—</p></div>
+  </div>
+</div>
+
+<!-- ======================== MAIN LAYOUT ======================== -->
+<div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+
+  <!-- ===== LEFT: DeepRouter CONSOLE ===== -->
+  <div class="card-glow p-6 flex flex-col">
+
+    <!-- Header -->
+    <div class="flex items-center gap-3 mb-1">
+      <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style="background:linear-gradient(135deg,#312e81,#1e1b4b)">
+        <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        </svg>
+      </div>
+      <div>
+        <h2 class="font-semibold text-white leading-tight">DeepRouter Console</h2>
+        <p class="text-xs text-slate-500">Semantic routing · Memory injection · Agent dispatch</p>
+      </div>
+    </div>
+    <div class="border-b border-slate-700/40 my-4"></div>
+
+    <!-- Example queries grouped by intent -->
+    <p class="text-xs font-medium text-slate-500 mb-2 uppercase tracking-wider">Example queries</p>
+    <div class="flex flex-wrap gap-2 mb-5">
+      <button class="ticker-btn" style="color:#818cf8;border-color:#312e81" onclick="setQuery('Tell me a joke about software engineers')">Chat</button>
+      <button class="ticker-btn" style="color:#818cf8;border-color:#312e81" onclick="setQuery('What is machine learning in simple terms?')">Explain ML</button>
+      <button class="ticker-btn" style="color:#34d399;border-color:#064e3b" onclick="setQuery('Analyze $NVDA options strategy')">$NVDA</button>
+      <button class="ticker-btn" style="color:#34d399;border-color:#064e3b" onclick="setQuery('Options strategy for $TSLA')">$TSLA</button>
+      <button class="ticker-btn" style="color:#34d399;border-color:#064e3b" onclick="setQuery('Best options play for $SPY right now')">$SPY</button>
+      <button class="ticker-btn" style="color:#fbbf24;border-color:#451a03" onclick="setQuery('Write a Python async rate limiter using token bucket')">Python</button>
+      <button class="ticker-btn" style="color:#fbbf24;border-color:#451a03" onclick="setQuery('Explain this regex: ^[A-Z]{1,5}$')">Regex</button>
+    </div>
+
+    <!-- Free-text query input -->
+    <div class="relative mb-3">
+      <textarea
+        id="query-input"
+        rows="3"
+        placeholder="Ask anything — finance, code, or casual chat..."
+        class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white text-sm placeholder-slate-600 resize-none transition-all"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();runQuery()}"
+        onfocus="this.style.borderColor='#6366f1';this.style.boxShadow='0 0 0 2px rgba(99,102,241,0.15)'"
+        onblur="this.style.borderColor='#334155';this.style.boxShadow='none'"
+      ></textarea>
+      <span class="absolute bottom-2.5 right-3 text-xs text-slate-700 pointer-events-none">Enter ↵ · Shift+Enter for newline</span>
+    </div>
+    <button
+      onclick="runQuery()"
+      id="analyze-btn"
+      class="w-full py-2.5 rounded-lg text-sm font-semibold text-white mb-5 transition-all active:scale-95"
+      style="background:linear-gradient(135deg,#6366f1,#8b5cf6)"
+    >
+      Send to Router
+    </button>
+
+    <!-- Status / Spinner -->
+    <div id="analysis-status" class="hidden flex items-center gap-2 text-sm text-slate-400 mb-3">
+      <svg class="w-4 h-4 spin text-indigo-400" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+      </svg>
+      <span id="status-text">Routing query...</span>
+    </div>
+
+    <!-- Routing Decision Card — shown after every query -->
+    <div id="routing-decision" class="hidden rounded-lg px-4 py-3 mb-4" style="background:#080d14;border:1px solid #1e293b">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
+          </svg>
+          <span class="text-xs text-slate-500">Routed to</span>
+          <span id="routing-intent-badge" class="text-xs px-2 py-0.5 rounded font-semibold font-mono"></span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <span class="text-xs text-slate-600">confidence</span>
+          <span id="routing-confidence" class="text-xs font-mono font-bold"></span>
+          <div id="routing-conf-bar-bg" class="w-16 h-1.5 rounded-full" style="background:#1e293b">
+            <div id="routing-conf-bar" class="h-1.5 rounded-full transition-all" style="background:#6366f1;width:0%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FINANCIAL RESULT PANEL (financial_quant intent) -->
+    <div id="result-panel" class="hidden">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <span id="res-ticker" class="text-xl font-bold text-white"></span>
+          <span id="res-trend-badge" class="text-xs px-2 py-0.5 rounded-full"></span>
+        </div>
+        <div class="text-right">
+          <div id="res-price" class="text-lg font-bold text-emerald-400"></div>
+          <div id="res-expiry" class="text-xs text-slate-500"></div>
+        </div>
+      </div>
+
+      <!-- Spread legs — dynamically rendered by renderResult() -->
+      <div class="rounded-lg p-4 mb-4" style="background:#0d1520" id="res-legs"></div>
+
+      <!-- P&L -->
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <div class="rounded-lg p-3 text-center" style="background:#0d2117">
+          <div class="text-xs text-slate-500 mb-1">Max Profit</div>
+          <div id="res-profit" class="text-lg font-bold text-emerald-400"></div>
+          <div class="text-xs text-slate-600">per contract</div>
+        </div>
+        <div class="rounded-lg p-3 text-center" style="background:#2d1515">
+          <div class="text-xs text-slate-500 mb-1">Max Loss</div>
+          <div id="res-loss" class="text-lg font-bold text-red-400"></div>
+          <div class="text-xs text-slate-600">per contract</div>
+        </div>
+      </div>
+
+      <!-- Risk bar -->
+      <div>
+        <div class="flex justify-between text-xs mb-1">
+          <span class="text-slate-500">Risk Score</span>
+          <span id="res-risk-label" class="font-mono font-bold"></span>
+        </div>
+        <div class="risk-bar-bg">
+          <div id="res-risk-bar" class="risk-bar"></div>
+        </div>
+        <div class="flex justify-between text-xs mt-1 text-slate-600">
+          <span>Conservative</span><span>High Risk</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- TEXT RESULT PANEL (casual_chat / code_assistant intents) -->
+    <div id="text-result-panel" class="hidden rounded-lg p-4" style="background:#080d14;border:1px solid #1e293b">
+      <div class="flex items-center gap-1.5 mb-3">
+        <div id="text-result-icon" class="w-2 h-2 rounded-full"></div>
+        <span id="text-result-label" class="text-xs font-semibold uppercase tracking-wider"></span>
+      </div>
+      <div id="text-response" class="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap" style="font-family:inherit;max-height:320px;overflow-y:auto"></div>
+    </div>
+
+    <!-- Error panel -->
+    <div id="error-panel" class="hidden rounded-lg p-4 text-sm text-red-400" style="background:#2d1515;border:1px solid #7f1d1d">
+      <div class="flex items-center gap-2">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <span id="error-text"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== RIGHT: METRICS + CHARTS ===== -->
+  <div class="flex flex-col gap-4">
+
+    <!-- Stats row -->
+    <div class="grid grid-cols-2 gap-3">
+      <div class="card p-4">
+        <div id="stat-requests" class="stat-value text-indigo-400">—</div>
+        <div class="stat-label">Total Requests</div>
+      </div>
+      <div class="card p-4">
+        <div id="stat-tasks" class="stat-value text-emerald-400">—</div>
+        <div class="stat-label">Tasks Dispatched</div>
+      </div>
+      <div class="card p-4">
+        <div id="stat-errors" class="stat-value text-red-400">—</div>
+        <div class="stat-label">Errors</div>
+      </div>
+      <div class="card p-4">
+        <div id="stat-error-rate" class="stat-value text-amber-400">—</div>
+        <div class="stat-label">Error Rate</div>
+      </div>
+    </div>
+
+    <!-- Intent donut -->
+    <div class="card p-5 flex-1">
+      <p class="text-sm font-semibold mb-3 text-slate-300">Intent Distribution</p>
+      <div class="flex items-center gap-6">
+        <canvas id="chart-intent" width="130" height="130" style="flex-shrink:0"></canvas>
+        <div id="intent-legend" class="space-y-2 text-sm flex-1"></div>
+      </div>
+    </div>
+
+    <!-- RPM sparkline -->
+    <div class="card p-5">
+      <p class="text-sm font-semibold mb-3 text-slate-300">
+        Requests/min <span class="text-slate-600 font-normal text-xs">(last 60 min)</span>
+      </p>
+      <canvas id="chart-rpm" height="60"></canvas>
+    </div>
+
+  </div>
+</div>
+
+<!-- ======================== RECENT ACTIVITY ======================== -->
+<div class="card p-5">
+  <p class="text-sm font-semibold mb-4 text-slate-300">Recent Activity</p>
+  <div class="overflow-auto">
+    <table class="w-full text-xs">
+      <thead>
+        <tr class="text-slate-500 border-b border-slate-700">
+          <th class="pb-2 text-left font-medium">Time</th>
+          <th class="pb-2 text-left font-medium">User</th>
+          <th class="pb-2 text-left font-medium">Path</th>
+          <th class="pb-2 text-left font-medium">Intent</th>
+          <th class="pb-2 text-right font-medium">Status</th>
+          <th class="pb-2 text-right font-medium">ms</th>
+        </tr>
+      </thead>
+      <tbody id="recent-tbody" class="divide-y divide-slate-800/60"></tbody>
+    </table>
+    <p id="recent-empty" class="text-slate-600 text-center py-6 text-xs hidden">No activity yet</p>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// Config
+// ============================================================
+const API_BASE   = window.location.origin;
+const REFRESH_MS = 5000;
+const INTENT_COLORS = {
+  casual_chat:     '#6366f1',
+  financial_quant: '#10b981',
+  code_assistant:  '#f59e0b',
+};
+const INTENT_LABELS = {
+  casual_chat:     'Casual Chat',
+  financial_quant: 'Financial Quant',
+  code_assistant:  'Code Assistant',
+};
+
+let pollingInterval = null;
+
+// ============================================================
+// API key (stored in sessionStorage)
+// ============================================================
+function getApiKey() {
+  let key = sessionStorage.getItem('dr_api_key');
+  if (!key) {
+    key = prompt('Enter API key (default: dev-secret-key):') || 'dev-secret-key';
+    sessionStorage.setItem('dr_api_key', key);
+  }
+  return key;
+}
+const apiHeaders = () => ({ 'Authorization': `Bearer ${getApiKey()}`, 'Content-Type': 'application/json' });
+
+// ============================================================
+// Query helper
+// ============================================================
+function setQuery(text) {
+  const el = document.getElementById('query-input');
+  el.value = text;
+  el.focus();
+}
+
+// ============================================================
+// Main entry point — send any query through DeepRouter
+// ============================================================
+async function runQuery() {
+  const query = document.getElementById('query-input').value.trim();
+  if (!query) { showError('Please enter a query.'); return; }
+
+  hideResult(); hideTextResult(); hideError(); hideRoutingDecision();
+  showStatus('Classifying intent via semantic router...');
+  document.getElementById('analyze-btn').disabled = true;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/chat/completions`, {
+      method: 'POST', headers: apiHeaders(),
+      body: JSON.stringify({ query })
+    });
+    const data = await res.json();
+    document.getElementById('analyze-btn').disabled = false;
+
+    if (!res.ok) { hideStatus(); showError(data.detail || `Error ${res.status}`); return; }
+
+    // Always show routing decision regardless of intent
+    showRoutingDecision(data.intent, data.confidence ?? 0);
+
+    if (data.status === 'processing') {
+      // financial_quant → async Celery/LangGraph path
+      updateStatus(`Quant agent dispatched — fetching ${data.ticker} options chain...`);
+      pollTask(data.task_id, data.ticker);
+    } else if (data.status === 'completed') {
+      // casual_chat / code_assistant → sync LiteLLM response
+      hideStatus();
+      renderTextResult(data.response, data.intent);
+    } else {
+      hideStatus();
+      showError('Unexpected response: ' + JSON.stringify(data));
+    }
+  } catch (e) {
+    document.getElementById('analyze-btn').disabled = false;
+    hideStatus();
+    showError('Network error: ' + e.message);
+  }
+}
+
+async function pollTask(taskId, ticker) {
+  if (pollingInterval) clearInterval(pollingInterval);
+
+  const steps = [
+    `Fetching live price & options chain for ${ticker}...`,
+    'Detecting market trend (MA20 / MA50)...',
+    'Scanning contracts for liquidity...',
+    'Building optimal spread strategy...',
+    'Calculating risk score...',
+    'Finalising analysis...',
+  ];
+  let step = 0;
+
+  pollingInterval = setInterval(async () => {
+    updateStatus(steps[Math.min(step++, steps.length - 1)]);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/tasks/${taskId}`, { headers: apiHeaders() });
+      const data = await res.json();
+
+      if (data.status === 'success') {
+        clearInterval(pollingInterval);
+        hideStatus();
+        renderResult(data.result);
+      } else if (data.status === 'failure') {
+        clearInterval(pollingInterval);
+        hideStatus();
+        showError('Analysis failed: ' + (data.error || 'unknown error'));
+      }
+    } catch (e) {
+      clearInterval(pollingInterval);
+      hideStatus();
+      showError('Polling error: ' + e.message);
+    }
+  }, 1500);
+}
+
+// ============================================================
+// Routing decision card
+// ============================================================
+function showRoutingDecision(intent, confidence) {
+  const intentMeta = {
+    financial_quant: { label: 'financial_quant', color: '#10b981' },
+    code_assistant:  { label: 'code_assistant',  color: '#f59e0b' },
+    casual_chat:     { label: 'casual_chat',      color: '#6366f1' },
+  };
+  const meta = intentMeta[intent] || { label: intent || 'unknown', color: '#64748b' };
+
+  const badge = document.getElementById('routing-intent-badge');
+  badge.textContent = meta.label;
+  badge.style.cssText = `background:${meta.color}22;color:${meta.color};border:1px solid ${meta.color}44;`;
+
+  const pct = Math.round((confidence || 0) * 100);
+  document.getElementById('routing-confidence').textContent = `${pct}%`;
+  document.getElementById('routing-confidence').style.color = meta.color;
+  document.getElementById('routing-conf-bar').style.width = pct + '%';
+  document.getElementById('routing-conf-bar').style.background = meta.color;
+
+  document.getElementById('routing-decision').classList.remove('hidden');
+}
+function hideRoutingDecision() {
+  document.getElementById('routing-decision').classList.add('hidden');
+}
+
+// ============================================================
+// Text result (casual_chat / code_assistant)
+// ============================================================
+function renderTextResult(response, intent) {
+  const meta = {
+    code_assistant: { label: 'Code Assistant', color: '#f59e0b' },
+    casual_chat:    { label: 'Chat',            color: '#6366f1' },
+  };
+  const m = meta[intent] || { label: 'Response', color: '#64748b' };
+
+  document.getElementById('text-result-icon').style.background  = m.color;
+  document.getElementById('text-result-label').textContent       = m.label;
+  document.getElementById('text-result-label').style.color       = m.color;
+  document.getElementById('text-response').textContent           = response || '(empty response)';
+  document.getElementById('text-result-panel').classList.remove('hidden');
+}
+function hideTextResult() {
+  document.getElementById('text-result-panel').classList.add('hidden');
+}
+
+// ============================================================
+// Render result — supports Bull Put Spread, Bear Call Spread, Iron Condor
+// ============================================================
+function renderResult(r) {
+  const a = r.analysis || {};
+
+  // Ticker + price row
+  document.getElementById('res-ticker').textContent = r.ticker;
+  document.getElementById('res-price').textContent  = r.current_price ? `$${r.current_price}` : '';
+  document.getElementById('res-expiry').textContent = a.expiry
+    ? `Expiry ${a.expiry}  (${r.dte || '?'} DTE)` : '';
+
+  // Trend badge
+  const trendBadge = document.getElementById('res-trend-badge');
+  const trendColors = {
+    bullish: 'background:#052e16;color:#4ade80;border:1px solid #16a34a',
+    neutral: 'background:#1e293b;color:#94a3b8;border:1px solid #475569',
+    bearish: 'background:#2d0f0f;color:#f87171;border:1px solid #dc2626',
+  };
+  trendBadge.setAttribute('style', trendColors[r.trend] || trendColors.neutral);
+  trendBadge.textContent = (r.trend || '').toUpperCase();
+
+  // Helper: one data row
+  function row(label, value) {
+    return `<div class="result-row">
+      <span class="result-label">${label}</span>
+      <span class="result-value">${value}</span>
+    </div>`;
+  }
+
+  // Strategy-specific legs
+  const strategy = a.strategy || 'none';
+  const strategyColors = {
+    'Bull Put Spread':  '#10b981',
+    'Bear Call Spread': '#f87171',
+    'Iron Condor':      '#a78bfa',
+  };
+  const strategyColor = strategyColors[strategy] || '#64748b';
+
+  let legsHtml = `<div style="color:${strategyColor}" class="text-xs font-bold uppercase tracking-widest mb-3">${strategy}</div>`;
+
+  if (strategy === 'Bull Put Spread') {
+    legsHtml += row('Short Put (sell)', `$${a.short_put_strike} &nbsp;<span class="text-slate-500 font-normal">mid $${a.short_put_mid}</span>`);
+    legsHtml += row('Long Put (buy)',   `$${a.long_put_strike} &nbsp;<span class="text-slate-500 font-normal">mid $${a.long_put_mid}</span>`);
+    legsHtml += row('Net Credit',       `<span class="text-emerald-400">$${a.net_credit}</span> / share &nbsp;<span class="text-slate-500 font-normal">($${(a.net_credit*100).toFixed(0)}/contract)</span>`);
+    legsHtml += row('Breakeven',        `$${a.breakeven}`);
+    legsHtml += row('Short IV',         a.short_iv ? `${(a.short_iv*100).toFixed(1)}%` : '—');
+
+  } else if (strategy === 'Bear Call Spread') {
+    legsHtml += row('Short Call (sell)', `$${a.short_call_strike} &nbsp;<span class="text-slate-500 font-normal">mid $${a.short_call_mid}</span>`);
+    legsHtml += row('Long Call (buy)',   `$${a.long_call_strike} &nbsp;<span class="text-slate-500 font-normal">mid $${a.long_call_mid}</span>`);
+    legsHtml += row('Net Credit',        `<span class="text-emerald-400">$${a.net_credit}</span> / share &nbsp;<span class="text-slate-500 font-normal">($${(a.net_credit*100).toFixed(0)}/contract)</span>`);
+    legsHtml += row('Breakeven',         `$${a.breakeven}`);
+    legsHtml += row('Short IV',          a.short_iv ? `${(a.short_iv*100).toFixed(1)}%` : '—');
+
+  } else if (strategy === 'Iron Condor') {
+    legsHtml += `<div class="text-xs text-slate-500 font-semibold mb-1.5 mt-1">PUT SPREAD (short below)</div>`;
+    legsHtml += row('Short Put (sell)', `$${a.short_put_strike} &nbsp;<span class="text-slate-500 font-normal">mid $${a.short_put_mid}</span>`);
+    legsHtml += row('Long Put (buy)',   `$${a.long_put_strike} &nbsp;<span class="text-slate-500 font-normal">mid $${a.long_put_mid}</span>`);
+    legsHtml += row('Put Credit',       `<span class="text-emerald-400">$${a.put_credit}</span> / share`);
+    legsHtml += `<div class="text-xs text-slate-500 font-semibold mb-1.5 mt-3">CALL SPREAD (short above)</div>`;
+    legsHtml += row('Short Call (sell)', `$${a.short_call_strike} &nbsp;<span class="text-slate-500 font-normal">mid $${a.short_call_mid}</span>`);
+    legsHtml += row('Long Call (buy)',   `$${a.long_call_strike} &nbsp;<span class="text-slate-500 font-normal">mid $${a.long_call_mid}</span>`);
+    legsHtml += row('Call Credit',       `<span class="text-emerald-400">$${a.call_credit}</span> / share`);
+    legsHtml += `<div class="text-xs text-slate-500 font-semibold mb-1.5 mt-3">COMBINED</div>`;
+    legsHtml += row('Total Credit',    `<span class="text-emerald-400">$${a.net_credit}</span> / share &nbsp;<span class="text-slate-500 font-normal">($${(a.net_credit*100).toFixed(0)}/contract)</span>`);
+    legsHtml += row('Profit Zone',     a.profit_zone || '—');
+    legsHtml += row('Breakeven Low',   `$${a.breakeven_low}`);
+    legsHtml += row('Breakeven High',  `$${a.breakeven_high}`);
+
+  } else {
+    legsHtml += `<div class="text-slate-500 text-sm py-2">${a.error || 'No liquid strategy found for this ticker.'}</div>`;
+  }
+
+  document.getElementById('res-legs').innerHTML = legsHtml;
+
+  // P&L
+  document.getElementById('res-profit').textContent = `$${a.max_profit ?? '—'}`;
+  document.getElementById('res-loss').textContent   = a.max_loss != null ? `-$${a.max_loss}` : '—';
+
+  // Risk bar
+  const score = r.risk_score || 0;
+  const riskLabel = document.getElementById('res-risk-label');
+  const riskBar   = document.getElementById('res-risk-bar');
+  riskLabel.textContent = score.toFixed(3);
+  riskBar.style.width = (score * 100) + '%';
+  const barColor = score > 0.7 ? '#ef4444' : score > 0.5 ? '#f59e0b' : '#10b981';
+  riskBar.style.background = barColor;
+  riskLabel.style.color = barColor;
+
+  document.getElementById('result-panel').classList.remove('hidden');
+}
+
+// ============================================================
+// UI helpers
+// ============================================================
+function showStatus(msg) {
+  document.getElementById('analysis-status').classList.remove('hidden');
+  document.getElementById('status-text').textContent = msg;
+}
+function updateStatus(msg) { document.getElementById('status-text').textContent = msg; }
+function hideStatus()  { document.getElementById('analysis-status').classList.add('hidden'); }
+function hideResult()  { document.getElementById('result-panel').classList.add('hidden'); }
+function showError(msg) {
+  document.getElementById('error-text').textContent = msg;
+  document.getElementById('error-panel').classList.remove('hidden');
+}
+function hideError() { document.getElementById('error-panel').classList.add('hidden'); }
+
+
+// ============================================================
+// Charts
+// ============================================================
+Chart.defaults.color = '#64748b';
+Chart.defaults.borderColor = '#1e293b';
+
+const rpmCtx = document.getElementById('chart-rpm').getContext('2d');
+const rpmChart = new Chart(rpmCtx, {
+  type: 'line',
+  data: {
+    labels: Array.from({length:60}, (_,i) => i===59?'now':`-${59-i}m`),
+    datasets: [{ data: Array(60).fill(0), borderColor:'#6366f1',
+      backgroundColor:'rgba(99,102,241,0.08)', borderWidth:1.5,
+      pointRadius:0, fill:true, tension:0.4 }]
+  },
+  options: {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{display:false} },
+    scales: {
+      x:{ ticks:{maxTicksLimit:6,font:{size:10}}, grid:{color:'#1e293b'} },
+      y:{ beginAtZero:true, ticks:{font:{size:10},stepSize:1}, grid:{color:'#1e293b'} }
+    }
+  }
+});
+
+const intentCtx = document.getElementById('chart-intent').getContext('2d');
+const intentChart = new Chart(intentCtx, {
+  type: 'doughnut',
+  data: {
+    labels: Object.values(INTENT_LABELS),
+    datasets: [{
+      data: [0,0,0],
+      backgroundColor: Object.values(INTENT_COLORS),
+      borderColor: '#1a1f2e', borderWidth:3, hoverOffset:6
+    }]
+  },
+  options: {
+    responsive:false, cutout:'72%',
+    plugins:{ legend:{display:false} }
+  }
+});
+
+// ============================================================
+// Status dots
+// ============================================================
+function setDot(id, status) {
+  const dot = document.getElementById(id);
+  if (!dot) return;
+  dot.className = `w-3 h-3 rounded-full flex-shrink-0 ${
+    status==='ok' ? 'bg-emerald-400' :
+    status==='error' ? 'bg-red-400 pulse' : 'bg-slate-600'}`;
+}
+function setLabel(id, text) { const el=document.getElementById(id); if(el) el.textContent=text; }
+function fmt(n) { return n>=1000 ? (n/1000).toFixed(1)+'k' : String(n); }
+function fmtTime(ts) { return new Date(ts*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
+function intentBadge(intent) {
+  const c = INTENT_COLORS[intent]||'#64748b';
+  const l = INTENT_LABELS[intent]||intent||'—';
+  return `<span style="background:${c}22;color:${c};border:1px solid ${c}55" class="px-1.5 py-0.5 rounded">${l}</span>`;
+}
+
+// ============================================================
+// Polling loop — health + metrics refresh
+// ============================================================
+async function refreshDashboard() {
+  const badge = document.getElementById('live-badge');
+
+  try {
+    // Health
+    const hRes = await fetch(`${API_BASE}/health`);
+    const h = await hRes.json();
+    const svc = h.services || {};
+    setDot('dot-redis',    svc.redis    ==='ok'?'ok':'error');
+    setLabel('lbl-redis',  svc.redis    ==='ok'?'Connected':'Unavailable');
+    setDot('dot-postgres', svc.postgres ==='ok'?'ok':'error');
+    setLabel('lbl-postgres',svc.postgres==='ok'?'Connected':'Unavailable');
+    setDot('dot-gateway',  'ok');
+    setLabel('lbl-gateway','Running');
+
+    // Metrics
+    const mRes = await fetch(`${API_BASE}/api/v1/metrics`, { headers: apiHeaders() });
+    const m = await mRes.json();
+
+    document.getElementById('stat-requests').textContent   = fmt(m.total_requests);
+    document.getElementById('stat-tasks').textContent      = fmt(m.tasks?.dispatched??0);
+    document.getElementById('stat-errors').textContent     = fmt(m.total_errors);
+    document.getElementById('stat-error-rate').textContent = (m.error_rate*100).toFixed(1)+'%';
+
+    // Celery indicator
+    const celeryOk = (m.tasks?.dispatched??0) > 0;
+    setDot('dot-celery', celeryOk?'ok':'unknown');
+    setLabel('lbl-celery', celeryOk?'Active':'Idle');
+
+    // RPM chart
+    if (m.rpm_series?.length===60) {
+      rpmChart.data.datasets[0].data = m.rpm_series;
+      rpmChart.update('none');
+    }
+
+    // Intent donut + legend
+    const intents = m.intents||{};
+    const vals = ['casual_chat','financial_quant','code_assistant'].map(k=>intents[k]||0);
+    intentChart.data.datasets[0].data = vals;
+    intentChart.update('none');
+    const total = vals.reduce((a,b)=>a+b,0);
+    document.getElementById('intent-legend').innerHTML =
+      Object.entries(INTENT_LABELS).map(([k,label],i)=>{
+        const pct = total>0?((vals[i]/total)*100).toFixed(0):0;
+        return `<div class="flex items-center justify-between text-xs">
+          <span><span class="intent-dot" style="background:${INTENT_COLORS[k]}"></span>${label}</span>
+          <span class="text-slate-400">${vals[i]} <span class="text-slate-600">(${pct}%)</span></span>
+        </div>`;
+      }).join('');
+
+    // Recent table
+    const tbody = document.getElementById('recent-tbody');
+    const empty = document.getElementById('recent-empty');
+    if (!m.recent?.length) { tbody.innerHTML=''; empty.classList.remove('hidden'); }
+    else {
+      empty.classList.add('hidden');
+      tbody.innerHTML = m.recent.map(row=>`
+        <tr class="hover:bg-slate-800/30">
+          <td class="py-1.5 text-slate-500 font-mono">${fmtTime(row.ts)}</td>
+          <td class="py-1.5 text-slate-400">${row.user}</td>
+          <td class="py-1.5 text-slate-400 font-mono">${row.path}</td>
+          <td class="py-1.5">${intentBadge(row.intent)}</td>
+          <td class="py-1.5 text-right ${row.status<400?'text-emerald-400':'text-red-400'} font-mono">${row.status}</td>
+          <td class="py-1.5 text-right text-slate-500 font-mono">${row.ms}</td>
+        </tr>`).join('');
+    }
+
+    badge.className='flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full badge-ok';
+    badge.innerHTML='<span class="w-2 h-2 rounded-full bg-emerald-400"></span> Live';
+    document.getElementById('last-updated').textContent='Updated '+new Date().toLocaleTimeString();
+
+  } catch(e) {
+    badge.className='flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full badge-error';
+    badge.innerHTML='<span class="w-2 h-2 rounded-full bg-red-400 pulse"></span> Error';
+  }
+}
+
+// Init
+getApiKey();
+refreshDashboard();
+setInterval(refreshDashboard, REFRESH_MS);
+</script>
+</body>
+</html>
