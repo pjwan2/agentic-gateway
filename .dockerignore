@@ -1,0 +1,33 @@
+# Version control
+.git
+.gitignore
+
+# Secrets — never bake these into the image
+.env
+*.pem
+*.key
+*.crt
+
+# Dev / test artefacts
+.pytest_cache
+tests/
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.ruff_cache
+
+# Local model cache — model is downloaded during docker build instead
+# (comment out this line if you want to reuse a local cache)
+# .model_cache
+
+# CI / docs
+.github/
+*.md
+
+# Nginx (mounted as volume, not baked in)
+nginx/certs/
+
+# Editor
+.vscode
+.idea
