@@ -1,11 +1,14 @@
 # api/middlewares/rate_limiter.py
 
 import time
+import logging
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from redis.exceptions import RedisError
 from core.redis_pool import redis_manager
+
+logger = logging.getLogger("DeepRouter.RateLimiter")
 
 # ==========================================
 # The "Brain" of the Rate Limiter: Lua Script
@@ -88,8 +91,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 )
 
         except RedisError as e:
-            # Fail open: if Redis is down, allow the request to prevent total outage
-            print(f"[Warning] Rate limiter bypassed due to Redis error: {e}")
+            # Intentional fail-open: if Redis is unavailable the rate limiter
+            # bypasses enforcement rather than blocking all traffic.
+            #
+            # Tradeoff rationale: the gateway serves as a routing layer in front
+            # of downstream LLMs that have their own provider-side rate limits.
+            # A Redis outage is already an incident; adding a hard 503 on every
+            # request would compound the blast radius unnecessarily.
+            #
+            # Mitigation: alert on Redis health-check failure (see /health) and
+            # restore Redis before sustained abuse can accumulate.
+            logger.warning(
+                "Rate limiter bypassed — Redis unavailable.",
+                extra={"error": str(e), "user_id": user_id},
+            )
 
         # 5. Pass to the next layer (Semantic Router, etc.)
         return await call_next(request)

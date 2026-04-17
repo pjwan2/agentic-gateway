@@ -5,15 +5,23 @@ load_dotenv()   # loads .env before any settings are read
 
 import os
 import re
+import time
 import logging
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 
 import litellm
-from fastapi import FastAPI, APIRouter, Request, Depends
+from fastapi import FastAPI, APIRouter, Request, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 
 # ── Internal imports ──────────────────────────────────────────
 from core.config import settings
@@ -32,7 +40,47 @@ from routers.tasks import router as tasks_router
 from routers.metrics import router as metrics_router
 
 # ──────────────────────────────────────────────────────────────
-# 1. Logging — must be configured before any logger is created
+# 1. LLM Circuit Breaker
+#
+# Sits in front of every litellm.acompletion call.
+# After `failure_threshold` consecutive failures the breaker opens
+# and immediately returns 503 instead of fan-outing to the LLM
+# backend — protecting downstream quota and latency budgets.
+# After `recovery_timeout` seconds the breaker enters half-open:
+# one probe is allowed through; on success it resets to closed.
+# ──────────────────────────────────────────────────────────────
+@dataclass
+class _CircuitBreaker:
+    failure_threshold: int = 5
+    recovery_timeout: int  = 60   # seconds
+
+    _failures:   int   = field(default=0,   init=False, repr=False)
+    _opened_at:  float = field(default=0.0, init=False, repr=False)
+
+    @property
+    def is_open(self) -> bool:
+        if self._failures < self.failure_threshold:
+            return False
+        elapsed = time.monotonic() - self._opened_at
+        if elapsed > self.recovery_timeout:
+            # Half-open: allow one probe through to test recovery
+            self._failures = self.failure_threshold - 1
+            return False
+        return True
+
+    def record_success(self) -> None:
+        self._failures = 0
+
+    def record_failure(self) -> None:
+        self._failures += 1
+        if self._failures >= self.failure_threshold:
+            self._opened_at = time.monotonic()
+
+
+_llm_breaker = _CircuitBreaker()
+
+# ──────────────────────────────────────────────────────────────
+# 2. Logging — must be configured before any logger is created
 # ──────────────────────────────────────────────────────────────
 _json_logs = os.getenv("ENV", "development") != "development"
 configure_logging(
@@ -199,7 +247,26 @@ def _extract_ticker(query: str) -> str:
     return candidates[0] if candidates else "SPY"
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type(Exception),
+    reraise=True,
+)
 async def _call_llm(prompt: str, intent: str) -> str:
+    """
+    Call the LLM backend with:
+      - Circuit breaker: opens after 5 consecutive failures, recovers after 60 s
+      - Retry: up to 3 attempts with 2 s / 4 s / 8 s exponential backoff
+      - Timeout: 30 s hard limit per attempt (prevents gateway stall on slow LLM)
+    """
+    if _llm_breaker.is_open:
+        logger.warning("LLM circuit breaker open — rejecting request.")
+        raise HTTPException(
+            status_code=503,
+            detail="LLM backend temporarily unavailable. Retry after 60 s.",
+        )
+
     model = (
         os.getenv("CODE_MODEL", "gpt-4o")
         if intent == "code_assistant"
@@ -209,9 +276,14 @@ async def _call_llm(prompt: str, intent: str) -> str:
         response = await litellm.acompletion(
             model=model,
             messages=[{"role": "user", "content": prompt}],
+            timeout=30,
         )
+        _llm_breaker.record_success()
         return response.choices[0].message.content
+    except HTTPException:
+        raise  # circuit-open 503 — don't record as LLM failure, don't retry
     except Exception as e:
+        _llm_breaker.record_failure()
         logger.error("LiteLLM call failed.", extra={"model": model, "error": str(e)})
         raise
 

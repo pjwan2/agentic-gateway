@@ -3,6 +3,7 @@
 > **An enterprise-grade intelligent API gateway that semantically routes natural language queries to the right AI backend — LLM, autonomous agent, or async task queue — with memory injection, observability, and production-ready infrastructure.**
 
 [![CI](https://github.com/pjwan2/agentic-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/pjwan2/agentic-gateway/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/pjwan2/agentic-gateway/branch/main/graph/badge.svg)](https://codecov.io/gh/pjwan2/agentic-gateway)
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)

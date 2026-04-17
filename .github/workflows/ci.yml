@@ -58,14 +58,25 @@ jobs:
           DEV_API_KEY: test-dev-key
         run: |
           pytest tests/unit -v --tb=short --fast \
-            --junitxml=reports/unit-results.xml
+            --junitxml=reports/unit-results.xml \
+            --cov=. --cov-report=xml:reports/coverage.xml \
+            --cov-report=term-missing
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: reports/coverage.xml
+          flags: unit
+          fail_ci_if_error: false
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: unit-test-results
-          path: reports/unit-results.xml
+          path: |
+            reports/unit-results.xml
+            reports/coverage.xml
 
   # ── 3. Integration tests ─────────────────────────────────────
   integration-tests:
